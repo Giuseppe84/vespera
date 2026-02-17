@@ -1,0 +1,796 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  ADMIN
+  MANAGER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  PAYPAL
+  STRIPE
+  BANK_TRANSFER
+}
+
+enum ComponentCategory {
+  SHADE           // paralume / diffusore
+  BASE            // base / supporto
+  STEM            // asta / gambo
+  JOINT           // giunto / raccordo
+  DECORATIVE      // elemento decorativo
+  HOUSING         // alloggiamento elettronico
+}
+
+enum MaterialType {
+  PLA
+  ABS
+  PETG
+  RESIN
+  METAL
+  WOOD
+  FABRIC
+  OTHER
+}
+
+enum LightSourceType {
+  LED_BULB
+  LED_STRIP
+  FILAMENT
+  NEON_FLEX
+  SMD
+}
+
+enum ConfigurationStatus {
+  DRAFT
+  SAVED
+  ORDERED
+  ARCHIVED
+}
+
+enum AddressType {
+  SHIPPING
+  BILLING
+}
+
+enum FilamentStatus {
+  AVAILABLE
+  LOW_STOCK
+  OUT_OF_STOCK
+  DISCONTINUED
+}
+
+
+
+enum FilamentBrand {
+  BAMBU
+  PRUSAMENT
+  ESUN
+  HATCHBOX
+  POLYMAKER
+  SUNLU
+  OVERTURE
+  GENERIC
+  OTHER
+}
+
+
+// ─────────────────────────────────────────────
+// USER & AUTH
+// ─────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  phone         String?
+  role          Role      @default(CUSTOMER)
+  isVerified    Boolean   @default(false)
+  avatarUrl     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  addresses           Address[]
+  orders              Order[]
+  cart                CartItem[]
+  reviews             Review[]
+  wishlist            WishlistItem[]
+  configurations      LampConfiguration[]
+  sessions            Session[]
+  notifications       Notification[]
+
+  @@map("users")
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Address {
+  id         String      @id @default(cuid())
+  userId     String
+  type       AddressType @default(SHIPPING)
+  fullName   String
+  line1      String
+  line2      String?
+  city       String
+  province   String?
+  postalCode String
+  country    String      @default("IT")
+  isDefault  Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shippingOrders Order[] @relation("ShippingAddress")
+  billingOrders  Order[] @relation("BillingAddress")
+
+  @@map("addresses")
+}
+
+// ─────────────────────────────────────────────
+// CATALOG — LAMPS
+// ─────────────────────────────────────────────
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  description String?
+  imageUrl    String?
+  parentId    String?
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+
+  parent     Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children   Category[] @relation("CategoryTree")
+  lamps      Lamp[]
+
+  @@map("categories")
+}
+
+model Lamp {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  shortDescription String?
+  description      String
+  categoryId       String
+  basePrice        Decimal  @db.Decimal(10, 2)
+  sku              String   @unique
+  isActive         Boolean  @default(true)
+  isFeatured       Boolean  @default(false)
+  isConfigurable   Boolean  @default(true)  // supports 3D configurator
+  weight           Float?   // kg
+  metaTitle        String?
+  metaDescription  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  category          Category              @relation(fields: [categoryId], references: [id])
+  media             LampMedia[]
+  variants          LampVariant[]
+  components        LampComponent[]       // which 3D components make up this lamp
+  electricalParts   LampElectricalPart[]  // which electrical parts belong to this lamp
+  reviews           Review[]
+  cartItems         CartItem[]
+  orderItems        OrderItem[]
+  wishlistItems     WishlistItem[]
+  configurations    LampConfiguration[]
+  tags              LampTag[]
+  attributes        LampAttribute[]
+
+  @@map("lamps")
+}
+
+model LampMedia {
+  id         String   @id @default(cuid())
+  lampId     String
+  url        String
+  altText    String?
+  type       String   @default("image") // image | video | model3d
+  isPrimary  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  lamp Lamp @relation(fields: [lampId], references: [id], onDelete: Cascade)
+
+  @@map("lamp_media")
+}
+
+model Tag {
+  id    String    @id @default(cuid())
+  name  String    @unique
+  slug  String    @unique
+  lamps LampTag[]
+
+  @@map("tags")
+}
+
+model LampTag {
+  lampId String
+  tagId  String
+
+  lamp Lamp @relation(fields: [lampId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([lampId, tagId])
+  @@map("lamp_tags")
+}
+
+model AttributeKey {
+  id         String          @id @default(cuid())
+  name       String          @unique  // e.g. "Style", "Finish", "Wattage"
+  attributes LampAttribute[]
+
+  @@map("attribute_keys")
+}
+
+model LampAttribute {
+  id             String @id @default(cuid())
+  lampId         String
+  attributeKeyId String
+  value          String  // e.g. "Industrial", "Matte Black", "15W"
+
+  lamp         Lamp         @relation(fields: [lampId], references: [id], onDelete: Cascade)
+  attributeKey AttributeKey @relation(fields: [attributeKeyId], references: [id])
+
+  @@unique([lampId, attributeKeyId])
+  @@map("lamp_attributes")
+}
+
+// Variants handle pre-built combinations (e.g. size + finish)
+model LampVariant {
+  id            String   @id @default(cuid())
+  lampId        String
+  name          String
+  sku           String   @unique
+  price         Decimal  @db.Decimal(10, 2)
+  comparePrice  Decimal? @db.Decimal(10, 2)
+  stockQty      Int      @default(0)
+  isActive      Boolean  @default(true)
+  imageUrl      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  lamp              Lamp                    @relation(fields: [lampId], references: [id], onDelete: Cascade)
+  variantOptions    LampVariantOption[]
+  cartItems         CartItem[]
+  orderItems        OrderItem[]
+
+  @@map("lamp_variants")
+}
+
+model VariantOptionKey {
+  id      String              @id @default(cuid())
+  name    String              @unique  // e.g. "Colore", "Dimensione"
+  options LampVariantOption[]
+
+  @@map("variant_option_keys")
+}
+
+model LampVariantOption {
+  id               String @id @default(cuid())
+  variantId        String
+  variantOptionKeyId String
+  value            String  // e.g. "Nero", "Large"
+
+  variant          LampVariant      @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variantOptionKey VariantOptionKey @relation(fields: [variantOptionKeyId], references: [id])
+
+  @@map("lamp_variant_options")
+}
+
+// ─────────────────────────────────────────────
+// 3D COMPONENTS
+// ─────────────────────────────────────────────
+
+model Component3D {
+  id              String            @id @default(cuid())
+  name            String
+  slug            String            @unique
+  description     String?
+  category        ComponentCategory
+  material        MaterialType      @default(PLA)
+  colorHex        String?           // default color
+  modelFileUrl    String            // .glb / .gltf file
+  thumbnailUrl    String?
+  printTime       Float?            // estimated hours
+  filamentGrams   Float?            // grams of filament
+  unitCost        Decimal           @db.Decimal(10, 2)
+  isActive        Boolean           @default(true)
+  sortOrder       Int               @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  lampComponents          LampComponent[]
+  configurationSlots      ConfigurationSlot[]
+  availableColors         ComponentColor[]
+  compatibilityAsA        ComponentCompatibility[] @relation("ComponentA")
+  compatibilityAsB        ComponentCompatibility[] @relation("ComponentB")
+  recommendedFilaments    Filament[]               @relation("ComponentFilament")
+
+  @@map("components_3d")
+}
+
+// Pre-defined colors available per component
+model ComponentColor {
+  id            String      @id @default(cuid())
+  componentId   String
+  name          String
+  colorHex      String
+  priceModifier Decimal     @db.Decimal(10, 2) @default(0)
+  isDefault     Boolean     @default(false)
+
+  component Component3D @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@map("component_colors")
+}
+
+// Which components make up a lamp model (template)
+model LampComponent {
+  id              String  @id @default(cuid())
+  lampId          String
+  componentId     String
+  quantity        Int     @default(1)
+  isOptional      Boolean @default(false)
+  isSwappable     Boolean @default(true)  // can be swapped in configurator
+  sortOrder       Int     @default(0)
+  positionLabel   String? // e.g. "Paralume superiore"
+
+  lamp      Lamp        @relation(fields: [lampId], references: [id], onDelete: Cascade)
+  component Component3D @relation(fields: [componentId], references: [id])
+
+  @@unique([lampId, componentId])
+  @@map("lamp_components")
+}
+
+// Which components are compatible with which
+model ComponentCompatibility {
+  id           String @id @default(cuid())
+  componentAId String
+  componentBId String
+
+  componentA Component3D @relation("ComponentA", fields: [componentAId], references: [id])
+  componentB Component3D @relation("ComponentB", fields: [componentBId], references: [id])
+
+  @@unique([componentAId, componentBId])
+  @@map("component_compatibility")
+}
+
+// ─────────────────────────────────────────────
+// ELECTRICAL PARTS
+// ─────────────────────────────────────────────
+
+model ElectricalPart {
+  id               String          @id @default(cuid())
+  name             String
+  slug             String          @unique
+  description      String?
+  sku              String          @unique
+  lightSourceType  LightSourceType?
+  voltage          Float?          // V
+  wattage          Float?          // W
+  colorTemperature Int?            // Kelvin (e.g. 2700, 4000, 6500)
+  lumens          Int?
+  cri             Float?           // Color Rendering Index
+  lifespan        Int?             // hours
+  cableLength     Float?           // meters
+  hasSwitch       Boolean         @default(false)
+  hasDimmer       Boolean         @default(false)
+  unitCost        Decimal         @db.Decimal(10, 2)
+  stockQty        Int             @default(0)
+  thumbnailUrl    String?
+  datasheetUrl    String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  lampElectricalParts      LampElectricalPart[]
+  configurationElecParts   ConfigurationElectricalPart[]
+
+  @@map("electrical_parts")
+}
+
+// Which electrical parts are used in a lamp model (template)
+model LampElectricalPart {
+  id            String @id @default(cuid())
+  lampId        String
+  partId        String
+  quantity      Int    @default(1)
+  isOptional    Boolean @default(false)
+  isSwappable   Boolean @default(false)
+
+  lamp Lamp           @relation(fields: [lampId], references: [id], onDelete: Cascade)
+  part ElectricalPart @relation(fields: [partId], references: [id])
+
+  @@unique([lampId, partId])
+  @@map("lamp_electrical_parts")
+}
+
+// ─────────────────────────────────────────────
+// 3D CONFIGURATOR
+// ─────────────────────────────────────────────
+
+// A user's saved lamp configuration (could be added to cart)
+model LampConfiguration {
+  id            String              @id @default(cuid())
+  userId        String
+  lampId        String              // base lamp template
+  name          String              @default("La mia lampada")
+  status        ConfigurationStatus @default(DRAFT)
+  totalPrice    Decimal             @db.Decimal(10, 2)
+  screenshotUrl String?             // 3D render snapshot
+  notes         String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  user          User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lamp          Lamp                          @relation(fields: [lampId], references: [id])
+  slots         ConfigurationSlot[]
+  electricalParts ConfigurationElectricalPart[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+
+  @@map("lamp_configurations")
+}
+
+// Each slot = one 3D component chosen for this configuration
+model ConfigurationSlot {
+  id              String  @id @default(cuid())
+  configurationId String
+  componentId     String
+  colorHex        String? // chosen color (overrides component default)
+  colorName       String?
+  quantity        Int     @default(1)
+  slotLabel       String? // e.g. "Paralume", "Base"
+  unitPrice       Decimal @db.Decimal(10, 2)
+  sortOrder       Int     @default(0)
+
+  configuration LampConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  component     Component3D       @relation(fields: [componentId], references: [id])
+
+  @@map("configuration_slots")
+}
+
+// Electrical parts chosen for a configuration
+model ConfigurationElectricalPart {
+  id              String  @id @default(cuid())
+  configurationId String
+  partId          String
+  quantity        Int     @default(1)
+  unitPrice       Decimal @db.Decimal(10, 2)
+
+  configuration LampConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  part          ElectricalPart    @relation(fields: [partId], references: [id])
+
+  @@map("configuration_electrical_parts")
+}
+
+// ─────────────────────────────────────────────
+// CART
+// ─────────────────────────────────────────────
+
+model CartItem {
+  id              String   @id @default(cuid())
+  userId          String
+  lampId          String
+  variantId       String?
+  configurationId String?  // if it's a custom-configured lamp
+  quantity        Int      @default(1)
+  unitPrice       Decimal  @db.Decimal(10, 2)
+  addedAt         DateTime @default(now())
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lamp          Lamp               @relation(fields: [lampId], references: [id])
+  variant       LampVariant?       @relation(fields: [variantId], references: [id])
+  configuration LampConfiguration? @relation(fields: [configurationId], references: [id])
+
+  @@unique([userId, lampId, variantId, configurationId])
+  @@map("cart_items")
+}
+
+// ─────────────────────────────────────────────
+// ORDERS
+// ─────────────────────────────────────────────
+
+model Order {
+  id                String        @id @default(cuid())
+  orderNumber       String        @unique
+  userId            String
+  status            OrderStatus   @default(PENDING)
+  subtotal          Decimal       @db.Decimal(10, 2)
+  shippingCost      Decimal       @db.Decimal(10, 2) @default(0)
+  taxAmount         Decimal       @db.Decimal(10, 2) @default(0)
+  discountAmount    Decimal       @db.Decimal(10, 2) @default(0)
+  totalAmount       Decimal       @db.Decimal(10, 2)
+  currency          String        @default("EUR")
+  shippingAddressId String
+  billingAddressId  String
+  notes             String?
+  estimatedDelivery DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id])
+  shippingAddress Address       @relation("ShippingAddress", fields: [shippingAddressId], references: [id])
+  billingAddress  Address       @relation("BillingAddress", fields: [billingAddressId], references: [id])
+  items           OrderItem[]
+  payment         Payment?
+  shipments       Shipment[]
+  couponUsages    CouponUsage[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String   @id @default(cuid())
+  orderId         String
+  lampId          String
+  variantId       String?
+  configurationId String?
+  quantity        Int
+  unitPrice       Decimal  @db.Decimal(10, 2)
+  totalPrice      Decimal  @db.Decimal(10, 2)
+  lampSnapshot    Json     // snapshot of lamp data at time of order
+
+  order         Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lamp          Lamp               @relation(fields: [lampId], references: [id])
+  variant       LampVariant?       @relation(fields: [variantId], references: [id])
+  configuration LampConfiguration? @relation(fields: [configurationId], references: [id])
+
+  @@map("order_items")
+}
+
+// ─────────────────────────────────────────────
+// PAYMENTS
+// ─────────────────────────────────────────────
+
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String        @unique
+  method          PaymentMethod
+  status          PaymentStatus @default(PENDING)
+  amount          Decimal       @db.Decimal(10, 2)
+  currency        String        @default("EUR")
+  gatewayTxId     String?       // Stripe / PayPal transaction ID
+  gatewayResponse Json?
+  paidAt          DateTime?
+  refundedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("payments")
+}
+
+// ─────────────────────────────────────────────
+// SHIPPING
+// ─────────────────────────────────────────────
+
+model ShippingProvider {
+  id        String     @id @default(cuid())
+  name      String
+  code      String     @unique
+  isActive  Boolean    @default(true)
+  shipments Shipment[]
+
+  @@map("shipping_providers")
+}
+
+model Shipment {
+  id             String   @id @default(cuid())
+  orderId        String
+  providerId     String
+  trackingNumber String?
+  trackingUrl    String?
+  shippedAt      DateTime?
+  estimatedAt    DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  order    Order            @relation(fields: [orderId], references: [id])
+  provider ShippingProvider @relation(fields: [providerId], references: [id])
+
+  @@map("shipments")
+}
+
+// ─────────────────────────────────────────────
+// PROMOTIONS
+// ─────────────────────────────────────────────
+
+model Coupon {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  description     String?
+  discountPercent Float?
+  discountFixed   Decimal?  @db.Decimal(10, 2)
+  minOrderAmount  Decimal?  @db.Decimal(10, 2)
+  maxUses         Int?
+  usedCount       Int       @default(0)
+  startsAt        DateTime?
+  expiresAt       DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+
+  usages CouponUsage[]
+
+  @@map("coupons")
+}
+
+model CouponUsage {
+  id        String   @id @default(cuid())
+  couponId  String
+  orderId   String
+  usedAt    DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id])
+  order  Order  @relation(fields: [orderId], references: [id])
+
+  @@unique([couponId, orderId])
+  @@map("coupon_usages")
+}
+
+// ─────────────────────────────────────────────
+// REVIEWS
+// ─────────────────────────────────────────────
+
+model Review {
+  id         String   @id @default(cuid())
+  lampId     String
+  userId     String
+  rating     Int      // 1-5
+  title      String?
+  body       String?
+  isVerified Boolean  @default(false) // verified purchase
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  lamp  Lamp @relation(fields: [lampId], references: [id], onDelete: Cascade)
+  user  User @relation(fields: [userId], references: [id])
+
+  @@unique([lampId, userId])
+  @@map("reviews")
+}
+
+// ─────────────────────────────────────────────
+// WISHLIST
+// ─────────────────────────────────────────────
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  lampId    String
+  addedAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lamp Lamp @relation(fields: [lampId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lampId])
+  @@map("wishlist_items")
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   // order_update | stock_alert | promo | system
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+
+// ─────────────────────────────────────────────
+// FILAMENTS STOCK
+// ─────────────────────────────────────────────
+
+model Filament {
+  id                String         @id @default(cuid())
+  name              String
+  brand             FilamentBrand  @default(GENERIC)
+  material          MaterialType   @default(PLA)
+  colorName         String
+  colorHex          String
+  diameter          Float          @default(1.75)  // mm (1.75 o 2.85)
+  spoolWeightGrams  Int            @default(1000)  // peso bobina in grammi
+  remainingGrams    Int                             // grammi rimanenti stimati
+  density           Float?                          // g/cm³ (utile per calcolo volume)
+  printTempMin      Int?                            // °C
+  printTempMax      Int?                            // °C
+  bedTempMin        Int?                            // °C
+  bedTempMax        Int?                            // °C
+  dryingTempMin     Int?                            // °C
+  dryingTempHours   Int?                            // ore di essicazione
+  purchasePrice     Decimal?       @db.Decimal(10, 2)
+  purchaseDate      DateTime?
+  supplier          String?
+  supplierUrl       String?
+  batchCode         String?                         // lotto produzione
+  isOpen            Boolean        @default(false)  // bobina aperta
+  status            FilamentStatus @default(AVAILABLE)
+  location          String?                         // dove è fisicamente (es. "Scaffale A2")
+  notes             String?
+  imageUrl          String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  usageLogs         FilamentUsageLog[]
+  components        Component3D[]  @relation("ComponentFilament")
+
+  @@map("filaments")
+}
+
+// Log di ogni utilizzo del filamento (per tracciare il consumo)
+model FilamentUsageLog {
+  id            String   @id @default(cuid())
+  filamentId    String
+  gramsUsed     Float
+  printJobName  String?  // nome del job di stampa
+  componentId   String?  // componente stampato (opzionale)
+  printDuration Float?   // ore di stampa
+  success       Boolean  @default(true)
+  notes         String?
+  usedAt        DateTime @default(now())
+
+  filament  Filament     @relation(fields: [filamentId], references: [id], onDelete: Cascade)
+
+  @@map("filament_usage_logs")
+}
