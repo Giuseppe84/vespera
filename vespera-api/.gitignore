@@ -3,6 +3,12 @@
 /node_modules
 /build
 
+.npm-debug.log
+.npm-cache/
+.DS_Store
+
+
+
 # Logs
 logs
 *.log
@@ -11,6 +17,7 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+
 
 # OS
 .DS_Store
